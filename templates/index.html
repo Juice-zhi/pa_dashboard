@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>PA 价格行为分析仪表板</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',monospace;font-size:13px}
+
+/* ── 顶栏 ── */
+.topbar{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 14px;background:#161b22;
+  border-bottom:1px solid #30363d;flex-wrap:wrap
+}
+.topbar h1{font-size:15px;color:#58a6ff;letter-spacing:1px;white-space:nowrap}
+.topbar input,.topbar select{
+  background:#0d1117;border:1px solid #30363d;color:#e6edf3;
+  border-radius:6px;padding:4px 9px;font-size:12px
+}
+.btn{background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:5px 16px;cursor:pointer;font-size:12px}
+.btn:hover{background:#388bfd}
+#status{font-size:11px;color:#8b949e;margin-left:4px}
+
+/* ── 布局 ── */
+.dashboard{display:grid;grid-template-columns:1fr 330px;gap:6px;padding:6px;height:calc(100vh - 50px)}
+.left-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.right-col{display:flex;flex-direction:column;gap:6px;overflow-y:auto}
+
+/* ── 卡片 ── */
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 12px}
+.card-title{font-size:11px;color:#8b949e;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;display:flex;justify-content:space-between;align-items:center}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+.bull{background:#0d4429;color:#3fb950}.bear{background:#4d1a1a;color:#f85149}.range{background:#1c1f26;color:#8b949e}
+
+/* ── 偏向仪表 ── */
+.bias-meter{display:flex;align-items:center;gap:8px;margin:6px 0}
+.bias-bar{flex:1;height:7px;border-radius:4px;background:linear-gradient(to right,#f85149,#484f58,#3fb950);position:relative}
+.bias-needle{position:absolute;top:-5px;width:3px;height:17px;background:#fff;border-radius:2px;transform:translateX(-50%);transition:left .5s ease}
+
+/* ── 结构标签 ── */
+.structure-tags{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.tag{padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.tag-hh{background:#0d4429;color:#3fb950}.tag-hl{background:#1a3a1a;color:#56d364}
+.tag-lh{background:#4d1a1a;color:#f85149}.tag-ll{background:#3a1a1a;color:#ffa198}
+
+/* ── 图表 ── */
+.chart-wrap{flex:1;min-height:380px;position:relative}
+#kline-chart{width:100%;height:100%}
+
+/* ── 盘前Bias专区 ── */
+.pm-card{background:#0d1724;border:1px solid #1c3a5c;border-radius:8px;padding:8px 12px}
+.pm-title{font-size:11px;color:#58a6ff;margin-bottom:6px;letter-spacing:.8px;text-transform:uppercase}
+.pm-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px}
+.pm-item{background:#0a1520;border-radius:5px;padding:4px 8px}
+.pm-label{color:#8b949e;font-size:10px}
+.pm-val{font-weight:600;font-size:12px}
+.pm-bias-bar{width:100%;height:6px;border-radius:3px;background:linear-gradient(to right,#f85149,#484f58,#3fb950);position:relative;margin:4px 0}
+.pm-needle{position:absolute;top:-4px;width:2px;height:14px;background:#fff;border-radius:2px;transform:translateX(-50%);transition:left .5s}
+
+/* ── 形态列表 ── */
+.pattern-item{padding:6px 10px;border-radius:6px;margin:3px 0;cursor:pointer;transition:background .15s}
+.pattern-item:hover{background:#1c2128}
+.pat-bull{border-left:3px solid #3fb950;background:#0a1f10}
+.pat-bear{border-left:3px solid #f85149;background:#1f0a0a}
+.pat-range{border-left:3px solid #8b949e;background:#111}
+.conf-bar{height:4px;border-radius:2px;background:#30363d;margin-top:3px}
+.conf-fill{height:100%;border-radius:2px;background:#1f6feb;transition:width .3s}
+
+/* ── 供需区 ── */
+.zone-item{padding:5px 8px;border-radius:6px;margin:3px 0;font-size:11px}
+.zone-demand{background:#0d2d1a;border:1px solid #1a4a2a}
+.zone-supply{background:#2d0d0d;border:1px solid #4a1a1a}
+
+/* ── 支撑阻力 ── */
+.sr-item{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d;font-size:11px}
+.sr-res{color:#f85149}.sr-sup{color:#3fb950}
+
+/* ── 做单机会 ── */
+.setup-card{padding:7px 10px;border-radius:6px;margin:4px 0}
+.setup-long{background:#0d2318;border:1px solid #238636}
+.setup-short{background:#2d1010;border:1px solid #b62324}
+.setup-prices{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;font-size:11px;margin:4px 0}
+.rr-badge{padding:1px 6px;border-radius:3px;background:#1c2128;font-size:10px}
+
+/* ── 逐K表格 ── */
+.kline-table{width:100%;border-collapse:collapse;font-size:10px}
+.kline-table th{color:#8b949e;padding:3px 5px;text-align:left;border-bottom:1px solid #30363d}
+.kline-table td{padding:2px 5px;border-bottom:1px solid #21262d;white-space:nowrap}
+.kline-table tr:hover{background:#1c2128}
+.up-cell{color:#3fb950}.down-cell{color:#f85149}
+
+/* ── Tab ── */
+.tab-row{display:flex;gap:3px;margin-bottom:5px}
+.tab-btn{padding:2px 9px;border-radius:4px;font-size:11px;cursor:pointer;background:#21262d;border:1px solid #30363d;color:#8b949e}
+.tab-btn.active{background:#1f6feb;border-color:#1f6feb;color:#fff}
+
+/* ── Loading ── */
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(13,17,23,.8);z-index:999;align-items:center;justify-content:center;flex-direction:column;gap:10px}
+.loading-overlay.show{display:flex}
+.spinner{width:34px;height:34px;border:3px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.price-display{font-size:22px;font-weight:700;letter-spacing:1px}
+.factor-list{margin:3px 0}
+.factor-list li{font-size:11px;color:#8b949e;list-style:none;padding:1px 0}
+.factor-list li.bull-f::before{content:'▲ ';color:#3fb950}
+.factor-list li.bear-f::before{content:'▼ ';color:#f85149}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:#0d1117}
+::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+
+/* ── 胜率分 ── */
+.wr-pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600}
+.wr-high{background:#0d4429;color:#3fb950}
+.wr-mid{background:#2a2a10;color:#d29922}
+.wr-low{background:#2a1010;color:#f85149}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div style="color:#8b949e;font-size:12px">分析中...</div>
+</div>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <h1>PA 价格行为分析</h1>
+  <input id="sym" type="text" value="AAPL" placeholder="代码" style="width:100px">
+  <select id="iv">
+    <option value="5m" selected>5分钟</option>
+    <option value="15m">15分钟</option>
+    <option value="30m">30分钟</option>
+    <option value="1h">1小时</option>
+    <option value="1d">日线</option>
+    <option value="1wk">周线</option>
+  </select>
+  <select id="per">
+    <option value="5d" selected>5天</option>
+    <option value="7d">7天</option>
+    <option value="14d">14天</option>
+    <option value="1mo">1个月</option>
+    <option value="3mo">3个月</option>
+    <option value="6mo">6个月</option>
+  </select>
+  <button class="btn" onclick="doAnalyze()">分析</button>
+  <span id="status"></span>
+</div>
+
+<!-- 主体 -->
+<div class="dashboard">
+
+  <!-- 左：图表 + 逐K -->
+  <div class="left-col">
+    <div class="card chart-wrap">
+      <div id="kline-chart"></div>
+    </div>
+    <div class="card" style="flex:0 0 auto">
+      <div class="card-title">
+        逐K分析（最近30根）
+        <div class="tab-row" style="margin:0">
+          <button class="tab-btn active" onclick="switchTab('table',this)">表格</button>
+          <button class="tab-btn" onclick="switchTab('signal',this)">形态</button>
+          <button class="tab-btn" onclick="switchTab('pattern',this)">结构</button>
+        </div>
+      </div>
+      <div id="tab-table" style="overflow:auto;max-height:210px">
+        <table class="kline-table">
+          <thead><tr>
+            <th>时间</th><th>开</th><th>高</th><th>低</th><th>收</th>
+            <th>方向</th><th>实体%</th><th>影线</th><th>形态</th><th>PA解读</th>
+          </tr></thead>
+          <tbody id="kline-tbody"></tbody>
+        </table>
+      </div>
+      <div id="tab-signal" style="display:none;max-height:210px;overflow-y:auto"></div>
+      <div id="tab-pattern" style="display:none;max-height:210px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <!-- 右：信息面板 -->
+  <div class="right-col">
+
+    <!-- 市场偏向 -->
+    <div class="card">
+      <div class="card-title">市场偏向 & 趋势结构
+        <div id="trend-badge"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px">
+        <div>
+          <div id="current-price" class="price-display">—</div>
+          <div id="last-update" style="font-size:10px;color:#8b949e"></div>
+        </div>
+        <div style="text-align:right;font-size:11px;color:#8b949e" id="bias-score-txt"></div>
+      </div>
+      <div class="bias-meter">
+        <span style="font-size:10px;color:#f85149">空</span>
+        <div class="bias-bar"><div class="bias-needle" id="bias-needle" style="left:50%"></div></div>
+        <span style="font-size:10px;color:#3fb950">多</span>
+      </div>
+      <div id="bias-desc" style="font-size:11px;color:#8b949e;margin:3px 0"></div>
+      <ul class="factor-list" id="bull-factors"></ul>
+      <ul class="factor-list" id="bear-factors"></ul>
+      <div class="structure-tags" id="structure-tags"></div>
+    </div>
+
+    <!-- 盘前Bias（日内模式才显示）-->
+    <div class="pm-card" id="pm-card" style="display:none">
+      <div class="pm-title">盘前 Bias 分析</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span id="pm-bias-label" style="font-size:14px;font-weight:700"></span>
+        <span id="pm-gap-label" style="font-size:11px;color:#8b949e"></span>
+      </div>
+      <div class="pm-bias-bar"><div class="pm-needle" id="pm-needle" style="left:50%"></div></div>
+      <div id="pm-desc" style="font-size:11px;color:#8b949e;margin:4px 0"></div>
+      <div class="pm-grid" id="pm-grid"></div>
+    </div>
+
+    <!-- 关键支撑阻力 -->
+    <div class="card">
+      <div class="card-title">关键支撑阻力</div>
+      <div id="sr-list"></div>
+    </div>
+
+    <!-- 供需区域 -->
+    <div class="card">
+      <div class="card-title">供需区域</div>
+      <div id="sd-list"></div>
+    </div>
+
+    <!-- 做单机会 -->
+    <div class="card">
+      <div class="card-title">做单机会 & 盈亏比</div>
+      <div id="setup-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let chart = null;
+let currentData = null;
+
+// ─── 初始化 ───
+function initChart() {
+  chart = echarts.init(document.getElementById('kline-chart'), 'dark');
+  window.addEventListener('resize', () => {
+    chart.resize();
+    fitChartHeight();
+  });
+}
+
+function fitChartHeight() {
+  const wrap = document.querySelector('.chart-wrap');
+  if (wrap && chart) chart.resize({ height: wrap.clientHeight });
+}
+
+// ─── 主分析 ───
+async function doAnalyze() {
+  const sym = document.getElementById('sym').value.trim() || 'AAPL';
+  const iv  = document.getElementById('iv').value;
+  const per = document.getElementById('per').value;
+  document.getElementById('loading').classList.add('show');
+  document.getElementById('status').textContent = `加载 ${sym}...`;
+  try {
+    const res = await fetch(`/api/analyze?symbol=${encodeURIComponent(sym)}&interval=${iv}&period=${per}`);
+    const json = await res.json();
+    if (!json.ok) { document.getElementById('status').textContent = '错误: '+json.error; return; }
+    currentData = json.data;
+    renderAll(json.data);
+    document.getElementById('status').textContent = `更新: ${json.data.last_update}`;
+  } catch(e) {
+    document.getElementById('status').textContent = '网络错误: '+e.message;
+  } finally {
+    document.getElementById('loading').classList.remove('show');
+  }
+}
+
+function renderAll(d) {
+  renderChart(d);
+  renderBias(d);
+  renderPreMarketBias(d.pre_market_bias, d.is_intraday);
+  renderSR(d.sr_levels, d.current_price);
+  renderSD(d.sd_zones, d.current_price);
+  renderSetups(d.setups);
+  renderKlineTable(d.candle_breakdown);
+  renderSignals(d.candle_signals);
+  renderPatternList(d.price_patterns);
+  setTimeout(fitChartHeight, 50);
+}
+
+// ─── K线图渲染 ───
+function renderChart(data) {
+  const ohlcv = data.ohlcv;
+  const times = ohlcv.map(d => d.time.slice(0, 16).replace('T', ' '));
+  const kdata = ohlcv.map(d => [d.open, d.close, d.low, d.high]);
+  const volumes = ohlcv.map(d => d.volume);
+  const volColors = ohlcv.map(d => d.close >= d.open ? '#3fb950' : '#f85149');
+
+  // ── 动态计算dataZoom范围：默认显示当天所有K线，有空间则往前含盘前 ──
+  // 找当天第一根K线（任意时段）的索引
+  const todayDate = ohlcv.length > 0 ? ohlcv[ohlcv.length - 1].time.slice(0, 10) : '';
+  let todayFirstIdx = ohlcv.findIndex(b => b.time.slice(0, 10) === todayDate);
+  if (todayFirstIdx < 0) todayFirstIdx = Math.max(0, ohlcv.length - 100);
+  // 找当天RTH开始索引（9:30），用于判断是否有盘前K线
+  const todayRthIdx = ohlcv.findIndex(
+    b => b.time.slice(0, 10) === todayDate && b.session === 'rth'
+  );
+  // 如果有盘前数据，从当天最早一根K线开始；否则从RTH开始
+  const viewStart = todayFirstIdx;
+  // 保留一点右侧空间（约3根K线宽度）
+  const zoomStart = Math.max(0, Math.floor(viewStart / ohlcv.length * 100) - 1);
+  const zoomEnd = 100;
+
+  // ── 供需区 markArea ──
+  const sdAreas = [];
+  (data.sd_zones || []).filter(z => z.freshness !== 'broken').forEach(z => {
+    sdAreas.push([
+      { yAxis: z.bottom, xAxis: times[0],
+        itemStyle: { color: z.kind==='demand' ? 'rgba(63,185,80,0.07)' : 'rgba(248,81,73,0.07)',
+                     borderColor: z.kind==='demand' ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)', borderWidth: 1 } },
+      { yAxis: z.top, xAxis: times[times.length-1] }
+    ]);
+  });
+
+  // ── IB区域 ──
+  const ibAreas = [];
+  const pmBias = data.pre_market_bias;
+  if (pmBias && pmBias.ib_high && pmBias.ib_low) {
+    ibAreas.push([
+      { yAxis: pmBias.ib_low, xAxis: times[0],
+        itemStyle: { color: 'rgba(255,166,87,0.05)', borderColor: 'rgba(255,166,87,0.3)', borderWidth: 1 } },
+      { yAxis: pmBias.ib_high, xAxis: times[times.length-1] }
+    ]);
+  }
+
+  // ── SR水平线 ──
+  const srLines = (data.sr_levels || []).slice(0, 8).map(l => ({
+    yAxis: l.price,
+    lineStyle: { color: l.kind==='resistance' ? '#f85149' : '#3fb950', type: 'dashed', width: 1, opacity: 0.55 },
+    label: { show: true, position: 'end', formatter: `${l.kind==='resistance'?'R':'S'} ${l.price}`,
+             fontSize: 9, color: l.kind==='resistance' ? '#f85149' : '#3fb950' }
+  }));
+
+  // ── 盘前关键价位线 ──
+  const pmLines = [];
+  if (pmBias && pmBias.key_levels) {
+    pmBias.key_levels.forEach(kl => {
+      const styleMap = { solid: 'solid', dashed: 'dashed', dotted: 'dotted' };
+      pmLines.push({
+        yAxis: kl.price,
+        lineStyle: { color: kl.color, type: styleMap[kl.style] || 'dashed', width: 1.5, opacity: 0.8 },
+        label: { show: true, position: 'insideEndTop', formatter: kl.label,
+                 fontSize: 10, color: kl.color, backgroundColor: '#0d1117', padding: [1,3] }
+      });
+    });
+  }
+
+  // ── 摆动点标记 ──
+  const swingMarks = (data.swing_points || []).slice(-12).map(p => {
+    const isHigh = p.kind === 'HH' || p.kind === 'LH';
+    const col = (p.kind==='HH'||p.kind==='HL') ? '#3fb950' : '#f85149';
+    // 找最近的时间匹配
+    const ts = p.timestamp.slice(0,16).replace('T',' ');
+    return { coord: [ts, p.price], value: p.kind, symbolSize: 7,
+             itemStyle: { color: col },
+             label: { show: true, formatter: p.kind, fontSize: 8,
+                      position: isHigh ? 'top' : 'bottom', color: col } };
+  });
+
+  // ── 形态标注线 ──
+  // 每个形态用独立的line series，key_prices的x是0-based的ohlcv索引，直接用times[x]
+  const patternSeries = [];
+  (data.price_patterns || []).forEach((pat, pi) => {
+    const kp = pat.key_prices || [];
+    if (kp.length < 2) return;
+    const col = pat.direction === 'bullish' ? '#3fb950' :
+                pat.direction === 'bearish' ? '#f85149' : '#8b949e';
+    const getCoord = (xi) => {
+      const idx = Math.max(0, Math.min(Math.round(xi), times.length - 1));
+      return [times[idx], null]; // [x_category, null] placeholder
+    };
+
+    if (pat.kind.startsWith('channel')) {
+      // 通道：上轨和下轨各一条线，使用两端点画直线
+      const upper = kp.filter(p => p.rail === 'upper');
+      const lower = kp.filter(p => p.rail === 'lower');
+      if (upper.length >= 2) {
+        const pts = upper.map(p => {
+          const idx = Math.max(0, Math.min(Math.round(p.x), times.length - 1));
+          return [times[idx], p.y];
+        });
+        patternSeries.push({
+          name: `pat_${pi}_upper`, type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+          data: pts, symbol: 'none', smooth: false, silent: true,
+          lineStyle: { color: col, type: 'dashed', width: 1.5, opacity: 0.75 },
+          // 只在第一个点显示标签
+          markPoint: { data: [{ coord: pts[0], value: kindLabel(pat.kind),
+            itemStyle: { opacity: 0 }, label: { show: true, formatter: kindLabel(pat.kind),
+            color: col, fontSize: 9, offset: [0, -10] } }] }
+        });
+      }
+      if (lower.length >= 2) {
+        const pts = lower.map(p => {
+          const idx = Math.max(0, Math.min(Math.round(p.x), times.length - 1));
+          return [times[idx], p.y];
+        });
+        patternSeries.push({
+          name: `pat_${pi}_lower`, type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+          data: pts, symbol: 'none', smooth: false, silent: true,
+          lineStyle: { color: col, type: 'dashed', width: 1.5, opacity: 0.75 }
+        });
+      }
+    } else {
+      // 其他形态：连接所有关键点，按x排序确保不乱序
+      const pts = [...kp]
+        .sort((a, b) => a.x - b.x)
+        .map(p => {
+          const idx = Math.max(0, Math.min(Math.round(p.x), times.length - 1));
+          return [times[idx], p.y];
+        });
+      // 去重（相同时间的取最近一个）
+      const seen = new Set();
+      const uniqPts = pts.filter(([t]) => { if (seen.has(t)) return false; seen.add(t); return true; });
+      if (uniqPts.length < 2) return;
+      patternSeries.push({
+        name: `pat_${pi}`, type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+        data: uniqPts,
+        symbol: 'circle', symbolSize: 5, silent: true,
+        lineStyle: { color: col, type: 'solid', width: 1.5, opacity: 0.8 },
+        itemStyle: { color: col },
+        // 标签只在第一个点显示形态名称
+        markPoint: { data: [{ coord: uniqPts[uniqPts.length - 1],
+          value: kindLabel(pat.kind),
+          itemStyle: { opacity: 0 },
+          label: { show: true, formatter: kindLabel(pat.kind),
+            color: col, fontSize: 9, offset: [24, 0] } }] }
+      });
+    }
+  });
+
+  // ── 盘前时段背景 ──
+  const sessionAreas = [];
+  if (data.is_intraday) {
+    let pmStart = null;
+    ohlcv.forEach((bar, i) => {
+      const isPremarket = bar.session === 'premarket';
+      if (isPremarket && pmStart === null) pmStart = i;
+      if (!isPremarket && pmStart !== null) {
+        sessionAreas.push([
+          { xAxis: times[pmStart], itemStyle: { color: 'rgba(88,166,255,0.04)' } },
+          { xAxis: times[i - 1] }
+        ]);
+        pmStart = null;
+      }
+    });
+    if (pmStart !== null && pmStart < times.length) {
+      sessionAreas.push([
+        { xAxis: times[pmStart], itemStyle: { color: 'rgba(88,166,255,0.04)' } },
+        { xAxis: times[times.length - 1] }
+      ]);
+    }
+  }
+
+  const allMarkAreas = [...sdAreas, ...ibAreas, ...sessionAreas];
+
+  const option = {
+    backgroundColor: '#161b22',
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      backgroundColor: '#1c2128',
+      borderColor: '#30363d',
+      textStyle: { color: '#e6edf3', fontSize: 11 },
+      formatter(params) {
+        const k = params.find(p => p.seriesName === 'K线');
+        if (!k) return '';
+        // ECharts candlestick data = [open, close, low, high]
+        const open  = k.data[0];
+        const close = k.data[1];
+        const low   = k.data[2];
+        const high  = k.data[3];
+        const color = close >= open ? '#3fb950' : '#f85149';
+        const chg = ((close - open) / open * 100).toFixed(2);
+        return `<div style="font-size:11px;min-width:150px">
+          <b style="color:#e6edf3">${k.axisValue}</b><br>
+          <span style="color:#8b949e">开</span> <b style="color:${color}">${open}</b>
+          <span style="color:#8b949e"> 高</span> <b style="color:${color}">${high}</b><br>
+          <span style="color:#8b949e">低</span> <b style="color:${color}">${low}</b>
+          <span style="color:#8b949e"> 收</span> <b style="color:${color}">${close}</b><br>
+          <span style="color:#8b949e">涨跌</span> <b style="color:${color}">${chg}%</b>
+        </div>`;
+      }
+    },
+    legend: { show: false },
+    grid: [
+      { left: 60, right: 14, top: 12, bottom: 100 },
+      { left: 60, right: 14, height: 55, bottom: 22 }
+    ],
+    xAxis: [
+      { type: 'category', data: times, gridIndex: 0,
+        axisLine: { lineStyle: { color: '#30363d' } },
+        axisLabel: { color: '#8b949e', fontSize: 9 }, splitLine: { show: false } },
+      { type: 'category', data: times, gridIndex: 1,
+        axisLabel: { show: false }, axisLine: { lineStyle: { color: '#30363d' } } }
+    ],
+    yAxis: [
+      { type: 'value', scale: true, gridIndex: 0,
+        splitLine: { lineStyle: { color: '#21262d' } },
+        axisLabel: { color: '#8b949e', fontSize: 9 }, position: 'left' },
+      { type: 'value', gridIndex: 1, splitLine: { show: false }, axisLabel: { show: false } }
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0,1], start: zoomStart, end: zoomEnd },
+      { show: true, xAxisIndex: [0,1], bottom: 4, height: 16, start: zoomStart, end: zoomEnd,
+        fillerColor: 'rgba(31,111,235,0.12)', borderColor: '#30363d',
+        textStyle: { color: '#8b949e', fontSize: 9 } }
+    ],
+    series: [
+      {
+        name: 'K线', type: 'candlestick',
+        xAxisIndex: 0, yAxisIndex: 0, data: kdata,
+        itemStyle: { color:'#3fb950', color0:'#f85149', borderColor:'#3fb950', borderColor0:'#f85149' },
+        markLine: {
+          data: [...srLines, ...pmLines],
+          symbol: 'none', silent: true, animation: false
+        },
+        markPoint: { data: swingMarks, symbol: 'circle', animation: false },
+        markArea: { silent: true, data: allMarkAreas }
+      },
+      {
+        name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, barMaxWidth: 8,
+        data: volumes.map((v,i) => ({ value: v, itemStyle: { color: volColors[i] } }))
+      },
+      ...patternSeries
+    ]
+  };
+
+  chart.setOption(option, true);
+}
+
+function kindLabel(kind) {
+  const m = {
+    bull_flag:'牛旗', bear_flag:'熊旗', three_drives_top:'三推顶', three_drives_bot:'三推底',
+    channel_up:'上升通道', channel_down:'下降通道', channel_flat:'横盘通道',
+    double_top:'双顶', double_bottom:'双底',
+    head_shoulders:'头肩顶', inv_head_shoulders:'反头肩底'
+  };
+  return m[kind] || kind;
+}
+
+// ─── 市场偏向 ───
+function renderBias(data) {
+  const bias = data.bias;
+  document.getElementById('current-price').textContent = data.current_price;
+  document.getElementById('last-update').textContent = data.last_update;
+  const bmap = { bullish:'<span class="badge bull">多头</span>',
+                  bearish:'<span class="badge bear">空头</span>',
+                  ranging:'<span class="badge range">震荡</span>' };
+  document.getElementById('trend-badge').innerHTML = bmap[bias.trend] || '';
+  const pct = ((bias.bias_score + 1) / 2 * 100).toFixed(1);
+  document.getElementById('bias-needle').style.left = pct + '%';
+  const sc = bias.bias_score;
+  const col = sc > 0.1 ? '#3fb950' : (sc < -0.1 ? '#f85149' : '#8b949e');
+  document.getElementById('bias-score-txt').innerHTML =
+    `<span style="color:${col};font-weight:700">${sc>0?'+':''}${sc}</span> 偏向分`;
+  document.getElementById('bias-desc').textContent = bias.description;
+  document.getElementById('bull-factors').innerHTML =
+    (bias.bullish_factors||[]).map(f=>`<li class="bull-f">${f}</li>`).join('');
+  document.getElementById('bear-factors').innerHTML =
+    (bias.bearish_factors||[]).map(f=>`<li class="bear-f">${f}</li>`).join('');
+  const tagMap = {HH:'tag-hh',HL:'tag-hl',LH:'tag-lh',LL:'tag-ll'};
+  document.getElementById('structure-tags').innerHTML =
+    (data.swing_points||[]).slice(-8).map(p=>
+      `<span class="tag ${tagMap[p.kind]||''}">${p.kind} ${p.price}</span>`
+    ).join('');
+}
+
+// ─── 盘前Bias ───
+function renderPreMarketBias(pmb, isIntraday) {
+  const card = document.getElementById('pm-card');
+  if (!pmb || !isIntraday) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const labelColor = pmb.bias_score >= 0.2 ? '#3fb950' :
+                     pmb.bias_score <= -0.2 ? '#f85149' : '#8b949e';
+  document.getElementById('pm-bias-label').innerHTML =
+    `<span style="color:${labelColor}">${pmb.bias_label}</span>`;
+  const gapCol = pmb.gap_type==='gap_up'?'#3fb950':(pmb.gap_type==='gap_down'?'#f85149':'#8b949e');
+  const gapStr = pmb.gap_type==='flat'?'平开':
+    (pmb.gap_type==='gap_up'?`高开 +${pmb.gap_pct}%`:`低开 ${pmb.gap_pct}%`);
+  document.getElementById('pm-gap-label').innerHTML = `<span style="color:${gapCol}">${gapStr}</span>`;
+
+  const pct = ((pmb.bias_score + 1) / 2 * 100).toFixed(1);
+  document.getElementById('pm-needle').style.left = pct + '%';
+  document.getElementById('pm-desc').textContent = pmb.description;
+
+  const cp = currentData ? currentData.current_price : 0;
+  const items = [
+    { label:'PDH 前日高', val: pmb.pdh, diff: cp ? ((cp-pmb.pdh)/pmb.pdh*100).toFixed(2)+'%' : '' },
+    { label:'PDL 前日低', val: pmb.pdl, diff: cp ? ((cp-pmb.pdl)/pmb.pdl*100).toFixed(2)+'%' : '' },
+    { label:'PDC 前日收', val: pmb.pdc, diff: '' },
+    { label:'PDM 前日中轴', val: pmb.pdm, diff: '' },
+    { label:'VWAP', val: pmb.vwap,
+      diff: pmb.vwap ? ((cp-pmb.vwap)/pmb.vwap*100).toFixed(2)+'%' : '' },
+    { label:'IB高 (10:30前)', val: pmb.ib_high, diff: '' },
+    { label:'IB低 (10:30前)', val: pmb.ib_low, diff: `范围 ${pmb.ib_range}` },
+    { label:'盘前成交量', val: pmb.pm_volume_ratio+'x', diff: pmb.pm_volume_ratio>2?'偏大':'正常' },
+  ];
+  document.getElementById('pm-grid').innerHTML = items.map(it => {
+    const diffCol = it.diff && it.diff.startsWith('-') ? '#f85149' :
+                    it.diff && !isNaN(parseFloat(it.diff)) ? '#3fb950' : '#8b949e';
+    return `<div class="pm-item">
+      <div class="pm-label">${it.label}</div>
+      <div class="pm-val">${it.val} <span style="color:${diffCol};font-size:10px">${it.diff}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ─── 支撑阻力 ───
+function renderSR(levels, cp) {
+  const el = document.getElementById('sr-list');
+  if (!levels||!levels.length) { el.innerHTML='<div style="color:#8b949e;font-size:11px">暂无</div>'; return; }
+  el.innerHTML = [...levels].sort((a,b)=>b.price-a.price).map(l => {
+    const cls = l.kind==='resistance' ? 'sr-res' : 'sr-sup';
+    const lab = l.kind==='resistance' ? '阻力' : '支撑';
+    const dist = ((l.price-cp)/cp*100).toFixed(2);
+    const bar = '█'.repeat(Math.min(l.strength,5));
+    return `<div class="sr-item">
+      <span class="sr-price ${cls}">${l.price}</span>
+      <span style="color:#8b949e">${lab}</span>
+      <span style="color:#6e7681">${bar}×${l.strength}</span>
+      <span style="color:${l.price>cp?'#f85149':'#3fb950'}">${dist>0?'+':''}${dist}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ─── 供需区 ───
+function renderSD(zones, cp) {
+  const el = document.getElementById('sd-list');
+  if (!zones||!zones.length) { el.innerHTML='<div style="color:#8b949e;font-size:11px">暂无区域</div>'; return; }
+  el.innerHTML = zones.map(z => {
+    const cls = z.kind==='demand' ? 'zone-demand' : 'zone-supply';
+    const lab = z.kind==='demand' ? '需求区 ▲' : '供给区 ▼';
+    const freshn = {'fresh':'🟢新鲜','tested':'🟡已测','broken':'🔴破坏'}[z.freshness]||'';
+    const dist = (((z.top+z.bottom)/2-cp)/cp*100).toFixed(2);
+    return `<div class="zone-item ${cls}">
+      <div style="display:flex;justify-content:space-between">
+        <b style="color:${z.kind==='demand'?'#3fb950':'#f85149'}">${lab}</b>
+        <span>${freshn}</span>
+        <span style="color:#8b949e">${dist>0?'+':''}${dist}%</span>
+      </div>
+      <div style="color:#8b949e;font-size:10px">${z.bottom} — ${z.top}</div>
+      <div style="color:#6e7681;font-size:10px">${z.description}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── 做单机会 ───
+function renderSetups(setups) {
+  const el = document.getElementById('setup-list');
+  if (!setups||!setups.length) { el.innerHTML='<div style="color:#8b949e;font-size:11px">当前无明显机会</div>'; return; }
+  const qmap = {'A+':'#feca57','A':'#ff9f43','B':'#74b9ff','C':'#8b949e'};
+  el.innerHTML = setups.map(s => {
+    const cls = s.direction==='long'?'setup-long':'setup-short';
+    const dir = s.direction==='long'?'做多 ▲':'做空 ▼';
+    const dirCol = s.direction==='long'?'#3fb950':'#f85149';
+    const qcol = qmap[s.quality]||'#8b949e';
+    const wr = s.win_rate_est || 0;
+    const wrCls = wr >= 0.6 ? 'wr-high' : (wr >= 0.5 ? 'wr-mid' : 'wr-low');
+    const reasons = (s.reasons||[]).map(r=>`• ${r}`).join('<br>');
+    return `<div class="setup-card ${cls}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <b style="color:${dirCol}">${dir}</b>
+        <div style="display:flex;gap:5px;align-items:center">
+          <span class="wr-pill ${wrCls}">胜率~${(wr*100).toFixed(0)}%</span>
+          <span style="color:${qcol};font-weight:700;font-size:12px">质量 ${s.quality}</span>
+        </div>
+      </div>
+      <div class="setup-prices">
+        <div><div style="color:#8b949e;font-size:10px">入场</div><b>${s.entry}</b></div>
+        <div><div style="color:#f85149;font-size:10px">止损</div><b style="color:#f85149">${s.stop_loss}</b></div>
+        <div><div style="color:#3fb950;font-size:10px">止盈1</div><b style="color:#3fb950">${s.take_profit_1}</b></div>
+      </div>
+      <div style="display:flex;gap:5px;margin:3px 0">
+        <span class="rr-badge">RR1 <b style="color:#feca57">1:${s.rr_ratio_1}</b></span>
+        <span class="rr-badge">RR2 <b style="color:#feca57">1:${s.rr_ratio_2}</b></span>
+        <span class="rr-badge">TP2 <b>${s.take_profit_2}</b></span>
+      </div>
+      <div style="font-size:10px;color:#6e7681">${reasons}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── 逐K表格 ───
+function renderKlineTable(breakdown) {
+  const tbody = document.getElementById('kline-tbody');
+  if (!breakdown||!breakdown.length) { tbody.innerHTML='<tr><td colspan="10" style="color:#8b949e">无数据</td></tr>'; return; }
+  tbody.innerHTML = [...breakdown].reverse().map(k => {
+    const cls = k.direction==='阳线'?'up-cell':'down-cell';
+    const pats = (k.patterns||[]).join(', ')||'—';
+    return `<tr>
+      <td style="color:#8b949e">${k.timestamp.slice(5,16)}</td>
+      <td class="${cls}">${k.open}</td>
+      <td class="${cls}">${k.high}</td>
+      <td class="${cls}">${k.low}</td>
+      <td class="${cls}">${k.close}</td>
+      <td class="${cls}">${k.direction}</td>
+      <td>${(k.body_ratio*100).toFixed(0)}%</td>
+      <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis">${k.wick_desc}</td>
+      <td style="color:#d29922">${pats}</td>
+      <td style="max-width:160px;color:#8b949e">${k.pa_desc}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── 形态信号 ───
+function renderSignals(signals) {
+  const el = document.getElementById('tab-signal');
+  if (!signals||!signals.length) { el.innerHTML='<div style="color:#8b949e;padding:8px">暂无形态</div>'; return; }
+  const iconMap = {
+    pin_bar_bull:'📌⬆', pin_bar_bear:'📌⬇', engulf_bull:'⬆吞没', engulf_bear:'⬇吞没',
+    doji:'✛十字星', inside_bar:'⬛IB', outside_bar:'⬜OB',
+    morning_star:'🌅早晨星', evening_star:'🌆黄昏星'
+  };
+  const strCol = {strong:'#f85149', moderate:'#d29922', weak:'#8b949e'};
+  el.innerHTML = [...signals].reverse().map(s => `
+    <div style="padding:5px 10px;border-bottom:1px solid #21262d">
+      <div style="display:flex;justify-content:space-between">
+        <b style="color:${strCol[s.strength]||'#8b949e'}">${iconMap[s.pattern]||s.pattern}</b>
+        <span style="color:#8b949e;font-size:10px">${s.timestamp.slice(5,16)}</span>
+      </div>
+      <div style="font-size:10px;color:#8b949e;margin-top:1px">${s.description}</div>
+    </div>`).join('');
+}
+
+// ─── 结构形态列表 ───
+function renderPatternList(patterns) {
+  const el = document.getElementById('tab-pattern');
+  if (!patterns||!patterns.length) {
+    el.innerHTML='<div style="color:#8b949e;padding:8px;font-size:11px">暂未识别到结构形态</div>';
+    return;
+  }
+  el.innerHTML = patterns.map((p,i) => {
+    const cls = p.direction==='bullish'?'pat-bull':(p.direction==='bearish'?'pat-bear':'pat-range');
+    const dirIco = p.direction==='bullish'?'▲':'▼';
+    const wr = p.win_rate_est || 0;
+    const wrCls = wr >= 0.6 ? 'wr-high' : (wr >= 0.5 ? 'wr-mid' : 'wr-low');
+    const rr = p.entry && p.stop ? Math.abs((p.target-p.entry)/(p.entry-p.stop)).toFixed(1) : '—';
+    return `<div class="pattern-item ${cls}" onclick="highlightPattern(${i})">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>${kindLabel(p.kind)} ${dirIco}</b>
+        <div style="display:flex;gap:5px">
+          <span class="wr-pill ${wrCls}">胜率~${(wr*100).toFixed(0)}%</span>
+          <span style="color:#8b949e;font-size:10px">RR ${rr}</span>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#8b949e;margin:2px 0">${p.description}</div>
+      <div style="font-size:10px;display:flex;gap:8px">
+        <span>入:<b style="color:#e6edf3">${p.entry}</b></span>
+        <span>止:<b style="color:#f85149">${p.stop}</b></span>
+        <span>目标:<b style="color:#3fb950">${p.target}</b></span>
+      </div>
+      <div class="conf-bar"><div class="conf-fill" style="width:${(p.confidence*100).toFixed(0)}%"></div></div>
+      <div style="font-size:9px;color:#8b949e;text-align:right">置信度 ${(p.confidence*100).toFixed(0)}%</div>
+    </div>`;
+  }).join('');
+}
+
+function highlightPattern(idx) {
+  // 点击形态，切换到结构tab并在图表上高亮
+  switchTab('pattern', document.querySelectorAll('.tab-btn')[2]);
+}
+
+// ─── Tab切换 ───
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-table').style.display = tab==='table' ? '' : 'none';
+  document.getElementById('tab-signal').style.display = tab==='signal' ? '' : 'none';
+  document.getElementById('tab-pattern').style.display = tab==='pattern' ? '' : 'none';
+}
+
+// ─── 初始化 ───
+initChart();
+doAnalyze();
+document.getElementById('sym').addEventListener('keydown', e => { if (e.key==='Enter') doAnalyze(); });
+
+// interval变化时自动调整period
+document.getElementById('iv').addEventListener('change', function() {
+  const per = document.getElementById('per');
+  const intraday = ['1m','5m','15m','30m','1h'].includes(this.value);
+  if (intraday && ['6mo','1y','3mo'].includes(per.value)) {
+    per.value = '5d';
+  } else if (!intraday && ['5d','7d','14d'].includes(per.value)) {
+    per.value = '6mo';
+  }
+});
+</script>
+</body>
+</html>
