@@ -171,7 +171,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',monospace;font-size
         <table class="kline-table">
           <thead><tr>
             <th>时间</th><th>开</th><th>高</th><th>低</th><th>收</th>
-            <th>方向</th><th>实体%</th><th>影线</th><th>形态</th><th>PA解读</th>
+            <th>方向</th><th>实体%</th><th>影线</th><th>PA解读</th>
           </tr></thead>
           <tbody id="kline-tbody"></tbody>
         </table>
@@ -477,21 +477,24 @@ function renderChart(data) {
       borderColor: '#30363d',
       textStyle: { color: '#e6edf3', fontSize: 11 },
       formatter(params) {
-        const k = params.find(p => p.seriesName === 'K线');
+        const k = params.find(p => p.seriesName === 'K线' && Array.isArray(p.data) && p.data.length >= 4);
         if (!k) return '';
-        // ECharts candlestick data = [open, close, low, high]
-        const open  = k.data[0];
-        const close = k.data[1];
-        const low   = k.data[2];
-        const high  = k.data[3];
+        // ECharts candlestick series data = [open, close, low, high]
+        // data[0]=open, data[1]=close, data[2]=lowest, data[3]=highest
+        const open  = parseFloat(k.data[0]);
+        const close = parseFloat(k.data[1]);
+        // Defensive: ensure high >= low regardless of data order
+        const low   = Math.min(parseFloat(k.data[2]), parseFloat(k.data[3]));
+        const high  = Math.max(parseFloat(k.data[2]), parseFloat(k.data[3]));
         const color = close >= open ? '#3fb950' : '#f85149';
-        const chg = ((close - open) / open * 100).toFixed(2);
+        const chg = open > 0 ? ((close - open) / open * 100).toFixed(2) : '0.00';
+        const fmt = v => isNaN(v) ? '—' : v.toFixed(v >= 100 ? 2 : (v >= 10 ? 3 : 4));
         return `<div style="font-size:11px;min-width:150px">
           <b style="color:#e6edf3">${k.axisValue}</b><br>
-          <span style="color:#8b949e">开</span> <b style="color:${color}">${open}</b>
-          <span style="color:#8b949e"> 高</span> <b style="color:${color}">${high}</b><br>
-          <span style="color:#8b949e">低</span> <b style="color:${color}">${low}</b>
-          <span style="color:#8b949e"> 收</span> <b style="color:${color}">${close}</b><br>
+          <span style="color:#8b949e">开</span> <b style="color:${color}">${fmt(open)}</b>
+          <span style="color:#8b949e"> 高</span> <b style="color:${color}">${fmt(high)}</b><br>
+          <span style="color:#8b949e">低</span> <b style="color:${color}">${fmt(low)}</b>
+          <span style="color:#8b949e"> 收</span> <b style="color:${color}">${fmt(close)}</b><br>
           <span style="color:#8b949e">涨跌</span> <b style="color:${color}">${chg}%</b>
         </div>`;
       }
@@ -672,6 +675,7 @@ function renderSetups(setups) {
     const wr = s.win_rate_est || 0;
     const wrCls = wr >= 0.6 ? 'wr-high' : (wr >= 0.5 ? 'wr-mid' : 'wr-low');
     const reasons = (s.reasons||[]).map(r=>`• ${r}`).join('<br>');
+    const src = s.win_rate_source ? `<div style="font-size:9px;color:#6e7681;margin-top:2px;border-top:1px solid #21262d;padding-top:2px">📚 ${s.win_rate_source}</div>` : '';
     return `<div class="setup-card ${cls}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <b style="color:${dirCol}">${dir}</b>
@@ -691,17 +695,16 @@ function renderSetups(setups) {
         <span class="rr-badge">TP2 <b>${s.take_profit_2}</b></span>
       </div>
       <div style="font-size:10px;color:#6e7681">${reasons}</div>
+      ${src}
     </div>`;
   }).join('');
 }
 
-// ─── 逐K表格 ───
 function renderKlineTable(breakdown) {
   const tbody = document.getElementById('kline-tbody');
-  if (!breakdown||!breakdown.length) { tbody.innerHTML='<tr><td colspan="10" style="color:#8b949e">无数据</td></tr>'; return; }
+  if (!breakdown||!breakdown.length) { tbody.innerHTML='<tr><td colspan="9" style="color:#8b949e">无数据</td></tr>'; return; }
   tbody.innerHTML = [...breakdown].reverse().map(k => {
     const cls = k.direction==='阳线'?'up-cell':'down-cell';
-    const pats = (k.patterns||[]).join(', ')||'—';
     return `<tr>
       <td style="color:#8b949e">${k.timestamp.slice(5,16)}</td>
       <td class="${cls}">${k.open}</td>
@@ -711,7 +714,6 @@ function renderKlineTable(breakdown) {
       <td class="${cls}">${k.direction}</td>
       <td>${(k.body_ratio*100).toFixed(0)}%</td>
       <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis">${k.wick_desc}</td>
-      <td style="color:#d29922">${pats}</td>
       <td style="max-width:160px;color:#8b949e">${k.pa_desc}</td>
     </tr>`;
   }).join('');
@@ -750,6 +752,7 @@ function renderPatternList(patterns) {
     const wr = p.win_rate_est || 0;
     const wrCls = wr >= 0.6 ? 'wr-high' : (wr >= 0.5 ? 'wr-mid' : 'wr-low');
     const rr = p.entry && p.stop ? Math.abs((p.target-p.entry)/(p.entry-p.stop)).toFixed(1) : '—';
+    const src = p.win_rate_source ? `<div style="font-size:9px;color:#6e7681;margin-top:2px;border-top:1px solid #21262d;padding-top:2px">📚 ${p.win_rate_source}</div>` : '';
     return `<div class="pattern-item ${cls}" onclick="highlightPattern(${i})">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <b>${kindLabel(p.kind)} ${dirIco}</b>
@@ -766,13 +769,89 @@ function renderPatternList(patterns) {
       </div>
       <div class="conf-bar"><div class="conf-fill" style="width:${(p.confidence*100).toFixed(0)}%"></div></div>
       <div style="font-size:9px;color:#8b949e;text-align:right">置信度 ${(p.confidence*100).toFixed(0)}%</div>
+      ${src}
     </div>`;
   }).join('');
 }
 
 function highlightPattern(idx) {
-  // 点击形态，切换到结构tab并在图表上高亮
+  // 切换到结构tab
   switchTab('pattern', document.querySelectorAll('.tab-btn')[2]);
+  if (!currentData || !currentData.price_patterns) return;
+  const pat = currentData.price_patterns[idx];
+  if (!pat) return;
+  const ohlcv = currentData.ohlcv;
+  const times = ohlcv.map(d => d.time.slice(0, 16).replace('T', ' '));
+
+  // 计算缩放范围：形态前后各留一定余量
+  const span = Math.max(pat.end_idx - pat.start_idx, 10);
+  const s = Math.max(0, pat.start_idx - Math.round(span * 0.5));
+  const e = Math.min(times.length - 1, pat.end_idx + Math.round(span * 0.5));
+
+  // 缩放图表到形态位置
+  chart.dispatchAction({
+    type: 'dataZoom',
+    startValue: times[s],
+    endValue: times[e]
+  });
+
+  // 在图表上高亮该形态：用 markPoint 显示入场/止损/目标标注
+  const col = pat.direction === 'bullish' ? '#3fb950' :
+              pat.direction === 'bearish' ? '#f85149' : '#8b949e';
+  const ts_end = times[Math.min(pat.end_idx, times.length - 1)];
+
+  // 高亮标注：在形态结束处显示入场/止损/目标
+  const highlightMarks = [];
+  if (pat.entry) highlightMarks.push({
+    coord: [ts_end, pat.entry],
+    value: `入 ${pat.entry}`,
+    symbolSize: 10, symbol: 'arrow',
+    itemStyle: { color: col },
+    label: { show: true, formatter: `入 ${pat.entry}`, color: col, fontSize: 9, position: 'right' }
+  });
+  if (pat.stop) highlightMarks.push({
+    coord: [ts_end, pat.stop],
+    value: `止 ${pat.stop}`,
+    symbolSize: 8, symbol: 'circle',
+    itemStyle: { color: '#f85149' },
+    label: { show: true, formatter: `止 ${pat.stop}`, color: '#f85149', fontSize: 9, position: 'right' }
+  });
+  if (pat.target) highlightMarks.push({
+    coord: [ts_end, pat.target],
+    value: `目标 ${pat.target}`,
+    symbolSize: 8, symbol: 'diamond',
+    itemStyle: { color: '#3fb950' },
+    label: { show: true, formatter: `目标 ${pat.target}`, color: '#3fb950', fontSize: 9, position: 'right' }
+  });
+
+  // 用 setOption merge 模式更新K线series的高亮markPoint（不覆盖整个图表）
+  chart.setOption({
+    series: [{
+      name: 'K线',
+      markPoint: {
+        data: [
+          // 保留原有的swing point marks，加上形态高亮
+          ...(currentData.swing_points || []).slice(-12).map(p => {
+            const isHigh = p.kind === 'HH' || p.kind === 'LH';
+            const c = (p.kind==='HH'||p.kind==='HL') ? '#3fb950' : '#f85149';
+            const ts = p.timestamp.slice(0,16).replace('T',' ');
+            return { coord: [ts, p.price], value: p.kind, symbolSize: 7,
+                     itemStyle: { color: c },
+                     label: { show: true, formatter: p.kind, fontSize: 8,
+                              position: isHigh ? 'top' : 'bottom', color: c } };
+          }),
+          ...highlightMarks
+        ],
+        symbol: 'circle', animation: false
+      }
+    }]
+  }, false);  // false = merge mode
+
+  // 高亮列表中对应项
+  document.querySelectorAll('.pattern-item').forEach((el, i) => {
+    el.style.outline = i === idx ? `2px solid ${col}` : '';
+    el.style.outlineOffset = i === idx ? '1px' : '';
+  });
 }
 
 // ─── Tab切换 ───
